@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -16,97 +17,14 @@ import mistune
 
 _md = mistune.create_markdown(escape=True, plugins=["strikethrough", "table", "url"])
 
-CSS = """
-:root { color-scheme: light;
-  --bg: #fff; --text: #222; --meta: #666;
-  --border: #ddd; --human-bg: #f5f7fb; --assistant-bg: #fff;
-  --role: #555; --ts: #999;
-  --tool-border: #4a90e2; --tool-bg: #f0f6ff;
-  --tool-err-border: #e24a4a; --tool-err-bg: #fff0f0;
-  --tool-name: #2a5ca0;
-  --thinking-border: #aaa; --thinking-bg: #fafafa;
-  --thinking-text: #555; --thinking-summary: #666;
-  --attach-border: #ccc; --pre-bg: #eef;
-  --index-border: #eee; --link: #2a5ca0; --date: #888; }
-[data-theme="dark"] { color-scheme: dark;
-  --bg: #1a1a1a; --text: #e5e5e5; --meta: #999;
-  --border: #333; --human-bg: #252a36; --assistant-bg: #1e1e1e;
-  --role: #aaa; --ts: #777;
-  --tool-border: #5a9ae8; --tool-bg: #1a2638;
-  --tool-err-border: #e87070; --tool-err-bg: #3a1e1e;
-  --tool-name: #7ab8ff;
-  --thinking-border: #555; --thinking-bg: #202020;
-  --thinking-text: #aaa; --thinking-summary: #888;
-  --attach-border: #444; --pre-bg: #2a2a3a;
-  --index-border: #2a2a2a; --link: #7ab8ff; --date: #777; }
-html { background: var(--bg); }
-body { font-family: -apple-system, Segoe UI, sans-serif; max-width: 900px;
-       margin: 2em auto; padding: 0 1em; color: var(--text); background: var(--bg); }
-h1 { margin-bottom: 0.2em; }
-.meta { color: var(--meta); font-size: 0.9em; margin-bottom: 2em; }
-.msg { border: 1px solid var(--border); border-radius: 6px; padding: 0.8em 1em;
-       margin: 0.8em 0; }
-.msg.human { background: var(--human-bg); }
-.msg.assistant { background: var(--assistant-bg); }
-.role { font-weight: 600; text-transform: uppercase; font-size: 0.75em;
-        letter-spacing: 0.05em; color: var(--role); }
-.ts { color: var(--ts); font-size: 0.8em; margin-left: 0.5em; }
-.block { margin: 0.6em 0; }
-.block pre, .text { white-space: pre-wrap; word-wrap: break-word;
-                    font-family: inherit; margin: 0; }
-.md > :first-child { margin-top: 0; }
-.md > :last-child { margin-bottom: 0; }
-.md p { margin: 0.5em 0; line-height: 1.5; }
-.md h1, .md h2, .md h3, .md h4 { margin: 0.8em 0 0.3em; line-height: 1.3; }
-.md h1 { font-size: 1.4em; } .md h2 { font-size: 1.2em; } .md h3 { font-size: 1.05em; }
-.md ul, .md ol { margin: 0.4em 0; padding-left: 1.6em; }
-.md li { margin: 0.15em 0; }
-.md code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em;
-           background: var(--pre-bg); padding: 0.1em 0.35em; border-radius: 3px; }
-.md pre { background: var(--pre-bg); padding: 0.7em 0.9em; border-radius: 5px;
-          overflow-x: auto; margin: 0.6em 0; }
-.md pre code { background: transparent; padding: 0; font-size: 0.88em; }
-.md blockquote { border-left: 3px solid var(--border); margin: 0.5em 0;
-                 padding: 0.1em 0.9em; color: var(--meta); }
-.md table { border-collapse: collapse; margin: 0.5em 0; }
-.md th, .md td { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; }
-.md th { background: var(--pre-bg); }
-.md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
-.md a { color: var(--link); }
-.tool { border-left: 3px solid var(--tool-border); padding: 0.4em 0.8em;
-        background: var(--tool-bg); font-size: 0.92em; }
-.tool.error { border-left-color: var(--tool-err-border); background: var(--tool-err-bg); }
-.tool-name { font-family: monospace; font-weight: 600; color: var(--tool-name); }
-.thinking { border-left: 3px solid var(--thinking-border); padding: 0.4em 0.8em;
-            background: var(--thinking-bg); color: var(--thinking-text); font-style: italic; }
-.thinking summary { cursor: pointer; font-style: normal; color: var(--thinking-summary); }
-.attachments { border-top: 1px dashed var(--attach-border); margin-top: 0.8em; padding-top: 0.6em;
-               font-size: 0.9em; }
-.attach-name { font-family: monospace; }
-pre.input { background: var(--pre-bg); padding: 0.5em; border-radius: 4px; overflow-x: auto; }
-ul.index { list-style: none; padding: 0; }
-ul.index li { padding: 0.4em 0; border-bottom: 1px solid var(--index-border); }
-ul.index a { text-decoration: none; color: var(--link); font-weight: 500; }
-ul.index .date { color: var(--date); font-size: 0.85em; margin-left: 0.5em; }
-a { color: var(--link); }
-#theme-toggle { position: fixed; top: 1em; right: 1em; padding: 0.4em 0.8em;
-                background: var(--assistant-bg); color: var(--text);
-                border: 1px solid var(--border); border-radius: 4px;
-                cursor: pointer; font-size: 0.85em; font-family: inherit; z-index: 100; }
-"""
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
-THEME_JS = (
-    "(function(){try{if(localStorage.getItem('theme')==='dark')"
-    "document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();"
-    "document.addEventListener('DOMContentLoaded',function(){"
-    "var b=document.getElementById('theme-toggle');if(!b)return;"
-    "function lbl(){b.textContent="
-    "document.documentElement.getAttribute('data-theme')==='dark'?'Light':'Dark';}"
-    "lbl();b.addEventListener('click',function(){"
-    "var el=document.documentElement,dark=el.getAttribute('data-theme')==='dark';"
-    "if(dark){el.removeAttribute('data-theme');}else{el.setAttribute('data-theme','dark');}"
-    "try{localStorage.setItem('theme',dark?'light':'dark');}catch(e){}lbl();});});"
-)
+THEMES = [
+    ("github-light", "GitHub Light"),
+    ("github-dark", "GitHub Dark"),
+    ("monokai-pro-light", "Monokai Pro Light"),
+    ("monokai-pro-dark", "Monokai Pro Dark"),
+]
 
 E = html.escape
 
@@ -216,14 +134,22 @@ def _conv_title(conv: dict) -> str:
     return conv.get("name") or "Untitled"
 
 
-def _page(title: str, body: str) -> str:
+def _theme_selector() -> str:
+    options = "".join(
+        f'<option value="{E(value)}">{E(label)}</option>'
+        for value, label in THEMES
+    )
+    return f'<select id="theme-select" aria-label="Theme">{options}</select>'
+
+
+def _page(title: str, body: str, asset_prefix: str = "") -> str:
     return (
         "<!DOCTYPE html><html><head>"
         f'<meta charset="utf-8"><title>{E(title)}</title>'
-        f"<style>{CSS}</style>"
-        f"<script>{THEME_JS}</script>"
+        f'<link rel="stylesheet" href="{asset_prefix}assets/style.css">'
+        f'<script src="{asset_prefix}assets/theme.js"></script>'
         "</head><body>"
-        '<button id="theme-toggle" type="button">Dark</button>'
+        f"{_theme_selector()}"
         f"{body}"
         "</body></html>"
     )
@@ -242,7 +168,7 @@ def _render_conversation(conv: dict) -> str:
         '<p><a href="../../index.html">← Index</a></p>'
     )
     msgs = "".join(_render_message(m) for m in conv.get("chat_messages") or [])
-    return _page(title, header + msgs)
+    return _page(title, header + msgs, asset_prefix="../../")
 
 
 def _render_index(convs: list[dict]) -> str:
@@ -265,10 +191,15 @@ def _render_index(convs: list[dict]) -> str:
     return _page("Claude chats", body)
 
 
+def _copy_assets(out: Path) -> None:
+    shutil.copytree(ASSETS_DIR, out / "assets", dirs_exist_ok=True)
+
+
 def convert(src: Path, out: Path) -> int:
     with src.open(encoding="utf-8") as f:
         convs = json.load(f)
     out.mkdir(parents=True, exist_ok=True)
+    _copy_assets(out)
     for conv in convs:
         chat_dir = out / "chats" / _conv_date(conv)
         chat_dir.mkdir(parents=True, exist_ok=True)

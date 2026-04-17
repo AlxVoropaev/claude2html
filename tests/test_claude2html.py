@@ -240,10 +240,28 @@ def test_role_labels_present(tmp_path):
 def test_page_is_self_contained(tmp_path):
     out = _run(tmp_path)
     page = (out / AAA).read_text(encoding="utf-8")
-    # CSS embedded, no external asset references
-    assert "<style" in page
-    assert "<link" not in page
-    assert "http://" not in page.split("</style>")[0]  # no external urls in head
+    # Assets are referenced via relative paths and shipped under out/assets/
+    assert 'href="../../assets/style.css"' in page
+    assert 'src="../../assets/theme.js"' in page
+    head = page.split("</head>")[0]
+    assert "http://" not in head
+    assert "https://" not in head
+    assert (out / "assets" / "style.css").is_file()
+    assert (out / "assets" / "theme.js").is_file()
+
+
+def test_index_references_assets(tmp_path):
+    out = _run(tmp_path)
+    idx = (out / "index.html").read_text(encoding="utf-8")
+    assert 'href="assets/style.css"' in idx
+    assert 'src="assets/theme.js"' in idx
+
+
+def test_theme_selector_lists_all_four(tmp_path):
+    out = _run(tmp_path)
+    page = (out / AAA).read_text(encoding="utf-8")
+    for value in ("github-light", "github-dark", "monokai-pro-light", "monokai-pro-dark"):
+        assert f'value="{value}"' in page
 
 
 def test_conversation_page_has_title_and_timestamps(tmp_path):
