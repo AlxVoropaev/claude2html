@@ -7,9 +7,18 @@ overwritten, but the ``crawled/`` cache is append-only across runs.
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 from . import crawler, render
+
+
+def _load_conversations(src: Path) -> list:
+    if zipfile.is_zipfile(src):
+        with zipfile.ZipFile(src) as z, z.open("conversations.json") as f:
+            return json.load(f)
+    with src.open(encoding="utf-8") as f:
+        return json.load(f)
 
 
 def convert(
@@ -19,8 +28,7 @@ def convert(
     fetcher=None,
     img_fetcher=None,
 ) -> int:
-    with src.open(encoding="utf-8") as f:
-        convs = json.load(f)
+    convs = _load_conversations(src)
 
     out.mkdir(parents=True, exist_ok=True)
     render.copy_assets(out)

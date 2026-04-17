@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import claude2html
@@ -295,6 +296,22 @@ BBB = Path("chats/2026-04-11/conv-bbb.html")
 RESEARCH = Path("chats/2026-04-12/conv-research.html")
 RESEARCH_ART = Path("artifacts/conv-research-1.html")
 ARTIFACTS_INDEX = Path("artifacts/index.html")
+
+
+def test_accepts_zip_export(tmp_path):
+    src = tmp_path / "export.zip"
+    with zipfile.ZipFile(src, "w") as z:
+        z.writestr("conversations.json", json.dumps(_fixture()))
+    out = tmp_path / "out"
+    result = subprocess.run(
+        [sys.executable, "-m", "claude2html", str(src), "-o", str(out)],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+    )
+    assert result.returncode == 0, result.stderr
+    assert (out / "index.html").is_file()
+    assert (out / "chats/2026-04-10/conv-aaa.html").is_file()
 
 
 def test_output_layout(tmp_path):

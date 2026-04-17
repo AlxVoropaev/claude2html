@@ -1,8 +1,8 @@
 # claude2html
 
-Convert a Claude chat export (`conversations.json`) to a set of offline-
-viewable HTML pages. Optionally crawl external links in chats/artifacts to
-local readable copies.
+Convert a Claude chat export (`conversations.json`, or the `.zip` archive
+as downloaded from Claude) to a set of offline-viewable HTML pages.
+Optionally crawl external links in chats/artifacts to local readable copies.
 
 ## Setup
 
@@ -18,7 +18,13 @@ Installs the `claude2html` package plus dev dependencies (`pytest`).
 uv run claude2html json/conversations.json -o out/
 ```
 
-or equivalently:
+or pass the export `.zip` directly:
+
+```bash
+uv run claude2html exports/data-*.zip -o out/
+```
+
+Equivalent module form:
 
 ```bash
 uv run python -m claude2html json/conversations.json -o out/

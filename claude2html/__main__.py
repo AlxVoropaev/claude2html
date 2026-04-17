@@ -11,7 +11,11 @@ from . import convert
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Convert Claude export to HTML.")
-    p.add_argument("src", type=Path, help="Path to conversations.json")
+    p.add_argument(
+        "src",
+        type=Path,
+        help="Path to conversations.json or a Claude export .zip",
+    )
     p.add_argument("-o", "--out", type=Path, required=True, help="Output directory")
     p.add_argument(
         "--crawl",
