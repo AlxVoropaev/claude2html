@@ -12,6 +12,10 @@ import json
 import sys
 from pathlib import Path
 
+import mistune
+
+_md = mistune.create_markdown(escape=True, plugins=["strikethrough", "table", "url"])
+
 CSS = """
 :root { color-scheme: light;
   --bg: #fff; --text: #222; --meta: #666;
@@ -50,6 +54,25 @@ h1 { margin-bottom: 0.2em; }
 .block { margin: 0.6em 0; }
 .block pre, .text { white-space: pre-wrap; word-wrap: break-word;
                     font-family: inherit; margin: 0; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0.5em 0; line-height: 1.5; }
+.md h1, .md h2, .md h3, .md h4 { margin: 0.8em 0 0.3em; line-height: 1.3; }
+.md h1 { font-size: 1.4em; } .md h2 { font-size: 1.2em; } .md h3 { font-size: 1.05em; }
+.md ul, .md ol { margin: 0.4em 0; padding-left: 1.6em; }
+.md li { margin: 0.15em 0; }
+.md code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em;
+           background: var(--pre-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+.md pre { background: var(--pre-bg); padding: 0.7em 0.9em; border-radius: 5px;
+          overflow-x: auto; margin: 0.6em 0; }
+.md pre code { background: transparent; padding: 0; font-size: 0.88em; }
+.md blockquote { border-left: 3px solid var(--border); margin: 0.5em 0;
+                 padding: 0.1em 0.9em; color: var(--meta); }
+.md table { border-collapse: collapse; margin: 0.5em 0; }
+.md th, .md td { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; }
+.md th { background: var(--pre-bg); }
+.md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+.md a { color: var(--link); }
 .tool { border-left: 3px solid var(--tool-border); padding: 0.4em 0.8em;
         background: var(--tool-bg); font-size: 0.92em; }
 .tool.error { border-left-color: var(--tool-err-border); background: var(--tool-err-bg); }
@@ -89,15 +112,14 @@ E = html.escape
 
 
 def _render_text_block(block: dict) -> str:
-    return f'<div class="block"><div class="text">{E(block.get("text", ""))}</div></div>'
+    return f'<div class="block"><div class="md">{_md(block.get("text", ""))}</div></div>'
 
 
 def _render_thinking(block: dict) -> str:
-    body = E(block.get("thinking", ""))
     return (
         '<div class="block thinking"><details>'
         "<summary>thinking</summary>"
-        f'<div class="text">{body}</div>'
+        f'<div class="md">{_md(block.get("thinking", ""))}</div>'
         "</details></div>"
     )
 

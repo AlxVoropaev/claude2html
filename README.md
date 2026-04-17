@@ -29,7 +29,8 @@ uv run pytest
 
 ## Layout
 
-- [claude2html.py](claude2html.py) — single-file converter, stdlib only.
+- [claude2html.py](claude2html.py) — single-file converter (uses `mistune` for
+  Markdown rendering).
 - [FORMAT.md](FORMAT.md) — notes on the export JSON structure used for
   rendering.
 - [tests/test_claude2html.py](tests/test_claude2html.py) — tests covering
@@ -41,8 +42,13 @@ uv run pytest
 - Renders: text, thinking, tool_use (with pretty-printed `input`),
   tool_result (flattened), attachments (name + extracted content), files
   (name only — bytes aren't in the export).
-- Text blocks are HTML-escaped with whitespace preserved; no Markdown
-  rendering yet.
+- Text and thinking blocks are rendered as Markdown (headings, lists,
+  fenced code, tables, blockquotes, strikethrough, autolinks); raw HTML
+  in the source is escaped.
 - Citations are not linked in the rendered text yet.
 - Binary/PDF `files[]` referenced by messages aren't included in the
   export, so only their filenames are shown.
+
+## License
+
+This project is open source and available under the MIT License.
