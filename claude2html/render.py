@@ -100,13 +100,22 @@ def _render_tool_result(block: dict) -> str:
     )
 
 
-def _render_web_search(use: dict, result: dict) -> str:
-    query = E(use.get("input", {}).get("query", "") or "web_search")
+def _collapsed_summary(use: dict) -> str | None:
+    name = use.get("name")
+    inp = use.get("input") or {}
+    if name == "web_search":
+        return f"🔍 {E(inp.get('query', '') or 'web_search')}"
+    if name == "web_fetch":
+        return f"🌐 {E(inp.get('url', '') or 'web_fetch')}"
+    return None
+
+
+def _render_collapsed_pair(use: dict, result: dict, summary: str) -> str:
     err_cls = " error" if result.get("is_error") else ""
     body = _render_tool_result_items(result.get("content") or [])
     return (
         f'<div class="block tool{err_cls}"><details>'
-        f"<summary>🔍 {query}</summary>"
+        f"<summary>{summary}</summary>"
         f"{body}"
         "</details></div>"
     )
@@ -216,17 +225,22 @@ def _render_message(msg: dict, emit_artifact, md) -> str:
         nxt = content[i + 1] if i + 1 < len(content) else None
         name = block.get("name")
         btype = block.get("type")
-        if btype in ("tool_use", "tool_result") and name == "launch_extended_search_task":
+        if btype in ("tool_use", "tool_result") and name in (
+            "launch_extended_search_task",
+            "ask_user_input_v0",
+        ):
             i += 1
             continue
         if (
             btype == "tool_use"
-            and name == "web_search"
+            and name in ("web_search", "web_fetch")
             and nxt is not None
             and nxt.get("type") == "tool_result"
             and nxt.get("tool_use_id") == block.get("id")
         ):
-            blocks.append(_render_web_search(block, nxt))
+            blocks.append(
+                _render_collapsed_pair(block, nxt, _collapsed_summary(block) or E(name))
+            )
             i += 2
             continue
         if btype == "tool_use" and name == "artifacts":
