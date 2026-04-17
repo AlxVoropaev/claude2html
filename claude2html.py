@@ -207,13 +207,17 @@ def _page(title: str, body: str) -> str:
     )
 
 
+def _conv_date(conv: dict) -> str:
+    return (conv.get("updated_at", "") or "")[:10] or "undated"
+
+
 def _render_conversation(conv: dict) -> str:
     title = _conv_title(conv)
     header = (
         f"<h1>{E(title)}</h1>"
         f'<div class="meta">Created {E(conv.get("created_at", ""))} · '
         f'Updated {E(conv.get("updated_at", ""))}</div>'
-        '<p><a href="index.html">← Index</a></p>'
+        '<p><a href="../../index.html">← Index</a></p>'
     )
     msgs = "".join(_render_message(m) for m in conv.get("chat_messages") or [])
     return _page(title, header + msgs)
@@ -221,16 +225,21 @@ def _render_conversation(conv: dict) -> str:
 
 def _render_index(convs: list[dict]) -> str:
     ordered = sorted(convs, key=lambda c: c.get("updated_at", ""), reverse=True)
-    items = []
+    groups: dict[str, list[dict]] = {}
     for c in ordered:
-        items.append(
-            f'<li><a href="{E(c["uuid"])}.html">{E(_conv_title(c))}</a>'
-            f'<span class="date">{E(c.get("updated_at", "")[:10])}</span></li>'
+        groups.setdefault(_conv_date(c), []).append(c)
+    sections = []
+    for date in sorted(groups, reverse=True):
+        items = "".join(
+            f'<li><a href="chats/{E(_conv_date(c))}/{E(c["uuid"])}.html">'
+            f"{E(_conv_title(c))}</a></li>"
+            for c in groups[date]
         )
-    body = (
-        f"<h1>Claude chats ({len(convs)})</h1>"
-        f'<ul class="index">{"".join(items)}</ul>'
-    )
+        sections.append(
+            f"<h2>{E(date)}</h2>"
+            f'<ul class="index">{items}</ul>'
+        )
+    body = f"<h1>Claude chats ({len(convs)})</h1>" + "".join(sections)
     return _page("Claude chats", body)
 
 
@@ -239,7 +248,9 @@ def convert(src: Path, out: Path) -> int:
         convs = json.load(f)
     out.mkdir(parents=True, exist_ok=True)
     for conv in convs:
-        (out / f"{conv['uuid']}.html").write_text(
+        chat_dir = out / "chats" / _conv_date(conv)
+        chat_dir.mkdir(parents=True, exist_ok=True)
+        (chat_dir / f"{conv['uuid']}.html").write_text(
             _render_conversation(conv), encoding="utf-8"
         )
     (out / "index.html").write_text(_render_index(convs), encoding="utf-8")

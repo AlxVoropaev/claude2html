@@ -158,48 +158,56 @@ def _run(tmp_path):
     return out
 
 
+AAA = Path("chats/2026-04-10/conv-aaa.html")
+BBB = Path("chats/2026-04-11/conv-bbb.html")
+
+
 def test_output_layout(tmp_path):
     out = _run(tmp_path)
     assert (out / "index.html").is_file()
-    assert (out / "conv-aaa.html").is_file()
-    assert (out / "conv-bbb.html").is_file()
-    html_files = sorted(p.name for p in out.glob("*.html"))
-    assert html_files == ["conv-aaa.html", "conv-bbb.html", "index.html"]
+    assert (out / AAA).is_file()
+    assert (out / BBB).is_file()
+    html_files = sorted(str(p.relative_to(out)) for p in out.rglob("*.html"))
+    assert html_files == [str(AAA), str(BBB), "index.html"]
 
 
 def test_index_lists_both_and_uses_fallback_title(tmp_path):
     out = _run(tmp_path)
     idx = (out / "index.html").read_text(encoding="utf-8")
-    assert 'href="conv-aaa.html"' in idx
-    assert 'href="conv-bbb.html"' in idx
+    assert f'href="{AAA.as_posix()}"' in idx
+    assert f'href="{BBB.as_posix()}"' in idx
     assert "Meeting Claude" in idx
     assert "Untitled" in idx  # fallback for empty name
 
 
-def test_index_sorted_by_updated_desc(tmp_path):
+def test_index_groups_by_date_desc(tmp_path):
     out = _run(tmp_path)
     idx = (out / "index.html").read_text(encoding="utf-8")
-    # conv-bbb updated 2026-04-11 (newer) → should appear before conv-aaa
-    assert idx.index("conv-bbb.html") < idx.index("conv-aaa.html")
+    # Newer date heading should come before older one
+    assert idx.index("<h2>2026-04-11</h2>") < idx.index("<h2>2026-04-10</h2>")
+    # Each conversation is listed under its date's heading
+    assert idx.index("<h2>2026-04-11</h2>") < idx.index("conv-bbb.html")
+    assert idx.index("conv-bbb.html") < idx.index("<h2>2026-04-10</h2>")
+    assert idx.index("<h2>2026-04-10</h2>") < idx.index("conv-aaa.html")
 
 
 def test_renders_text_and_escapes_html(tmp_path):
     out = _run(tmp_path)
-    page = (out / "conv-aaa.html").read_text(encoding="utf-8")
+    page = (out / AAA).read_text(encoding="utf-8")
     assert "Hello &lt;there&gt; &amp; friends" in page
     assert "<there>" not in page  # raw angle brackets must not leak
 
 
 def test_renders_tool_use_with_input(tmp_path):
     out = _run(tmp_path)
-    page = (out / "conv-aaa.html").read_text(encoding="utf-8")
+    page = (out / AAA).read_text(encoding="utf-8")
     assert "web_search" in page
     assert "claude export format" in page  # the query from input
 
 
 def test_renders_tool_result_flattened(tmp_path):
     out = _run(tmp_path)
-    page = (out / "conv-aaa.html").read_text(encoding="utf-8")
+    page = (out / AAA).read_text(encoding="utf-8")
     assert "Snippet one." in page
     assert "Snippet two." in page
     assert "Docs &lt;title&gt;" in page  # title rendered & escaped
@@ -207,13 +215,13 @@ def test_renders_tool_result_flattened(tmp_path):
 
 def test_renders_thinking(tmp_path):
     out = _run(tmp_path)
-    page = (out / "conv-aaa.html").read_text(encoding="utf-8")
+    page = (out / AAA).read_text(encoding="utf-8")
     assert "I should call web_search." in page
 
 
 def test_renders_attachment_and_file_names(tmp_path):
     out = _run(tmp_path)
-    page = (out / "conv-aaa.html").read_text(encoding="utf-8")
+    page = (out / AAA).read_text(encoding="utf-8")
     assert "prompts.md" in page
     assert "scan.pdf" in page
     # Attachment extracted content is shown and escaped
@@ -223,7 +231,7 @@ def test_renders_attachment_and_file_names(tmp_path):
 
 def test_role_labels_present(tmp_path):
     out = _run(tmp_path)
-    page = (out / "conv-aaa.html").read_text(encoding="utf-8")
+    page = (out / AAA).read_text(encoding="utf-8")
     # Some indication of who sent each message
     assert "human" in page.lower()
     assert "assistant" in page.lower()
@@ -231,7 +239,7 @@ def test_role_labels_present(tmp_path):
 
 def test_page_is_self_contained(tmp_path):
     out = _run(tmp_path)
-    page = (out / "conv-aaa.html").read_text(encoding="utf-8")
+    page = (out / AAA).read_text(encoding="utf-8")
     # CSS embedded, no external asset references
     assert "<style" in page
     assert "<link" not in page
@@ -240,6 +248,6 @@ def test_page_is_self_contained(tmp_path):
 
 def test_conversation_page_has_title_and_timestamps(tmp_path):
     out = _run(tmp_path)
-    page = (out / "conv-aaa.html").read_text(encoding="utf-8")
+    page = (out / AAA).read_text(encoding="utf-8")
     assert "Meeting Claude" in page
     assert "2026-04-10" in page
