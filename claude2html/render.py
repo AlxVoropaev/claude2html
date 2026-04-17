@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import html
 import json
-import shutil
 from pathlib import Path
 
 import mistune
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+_STYLE_CSS = (ASSETS_DIR / "style.css").read_text(encoding="utf-8")
+_THEME_JS = (ASSETS_DIR / "theme.js").read_text(encoding="utf-8")
 
 THEMES = [
     ("github-light", "GitHub Light"),
@@ -178,7 +179,7 @@ def _render_artifact_page(use: dict, back_href: str, md) -> str:
         f'<div class="md">{md(content)}</div>'
         f"{_render_md_citations(citations)}"
     )
-    return _page(title, body, asset_prefix="../")
+    return _page(title, body)
 
 
 def _render_attachments(msg: dict) -> str:
@@ -282,12 +283,14 @@ def _theme_selector() -> str:
     return f'<select id="theme-select" aria-label="Theme">{options}</select>'
 
 
-def _page(title: str, body: str, asset_prefix: str = "") -> str:
+def _page(title: str, body: str) -> str:
     return (
         "<!DOCTYPE html><html><head>"
-        f'<meta charset="utf-8"><title>{E(title)}</title>'
-        f'<link rel="stylesheet" href="{asset_prefix}assets/style.css">'
-        f'<script src="{asset_prefix}assets/theme.js"></script>'
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{E(title)}</title>"
+        f"<style>{_STYLE_CSS}</style>"
+        f"<script>{_THEME_JS}</script>"
         "</head><body>"
         f"{_theme_selector()}"
         f"{body}"
@@ -342,7 +345,7 @@ def render_conversation(
         _render_message(m, emit_artifact, md_chat)
         for m in conv.get("chat_messages") or []
     )
-    return _page(title, header + msgs, asset_prefix="../../")
+    return _page(title, header + msgs)
 
 
 def render_index(convs: list[dict], n_artifacts: int) -> str:
@@ -391,11 +394,7 @@ def render_artifact_index(artifacts: list) -> str:
         f"<h1>Artifacts ({len(artifacts)})</h1>"
         + "".join(sections)
     )
-    return _page("Artifacts", body, asset_prefix="../")
-
-
-def copy_assets(out: Path) -> None:
-    shutil.copytree(ASSETS_DIR, out / "assets", dirs_exist_ok=True)
+    return _page("Artifacts", body)
 
 
 def conv_date(conv: dict) -> str:

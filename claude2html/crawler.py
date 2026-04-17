@@ -190,7 +190,7 @@ def _render_crawled_page(url: str, md_text: str) -> str:
         f'<a href="{E(url)}">{E(url)}</a></p>'
     )
     body = banner + f'<div class="md">{md(md_text)}</div>'
-    return _page(url, body, asset_prefix="../../")
+    return _page(url, body)
 
 
 def _load_index(index_file: Path) -> dict[str, str]:

@@ -152,11 +152,12 @@ h1 { margin-bottom: 0.2em; }
 .md pre code { background: transparent; padding: 0; font-size: 0.88em; }
 .md blockquote { border-left: 3px solid var(--border); margin: 0.8em 0;
                  padding: 0.2em 1em; color: var(--meta); }
-.md table { border-collapse: collapse; margin: 0.5em 0; }
+.md table { border-collapse: collapse; margin: 0.5em 0;
+            display: block; overflow-x: auto; max-width: 100%; }
 .md th, .md td { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; }
 .md th { background: var(--pre-bg); }
 .md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
-.md a { color: var(--link); }
+.md a { color: var(--link); overflow-wrap: anywhere; }
 .md img { max-width: 100%; height: auto; }
 
 .tool { border-left: 3px solid var(--tool-border); padding: 0.4em 0.8em;
@@ -193,4 +194,14 @@ ul.citations li { margin: 0.3em 0; }
   font-family: inherit;
   z-index: 100;
   cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  body { margin: 1em auto; padding: 0 0.75em; font-size: 16px; }
+  h1 { padding-right: 7em; }
+  .msg { padding: 0.6em 0.75em; }
+  .md h1 { font-size: 1.4em; }
+  .md h2 { font-size: 1.2em; }
+  .md pre { padding: 0.7em 0.8em; font-size: 0.85em; }
+  #theme-select { top: 0.5em; right: 0.5em; padding: 0.25em 0.4em; font-size: 0.75em; }
 }

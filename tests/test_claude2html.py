@@ -399,21 +399,19 @@ def test_role_labels_present(tmp_path):
 def test_page_is_self_contained(tmp_path):
     out = _run(tmp_path)
     page = (out / AAA).read_text(encoding="utf-8")
-    # Assets are referenced via relative paths and shipped under out/assets/
-    assert 'href="../../assets/style.css"' in page
-    assert 'src="../../assets/theme.js"' in page
+    # CSS and JS are inlined so pages work when opened via content:// URIs
+    assert "<style>" in page and "--bg:" in page
+    assert "<script>" in page and 'localStorage.getItem("theme")' in page
     head = page.split("</head>")[0]
     assert "http://" not in head
     assert "https://" not in head
-    assert (out / "assets" / "style.css").is_file()
-    assert (out / "assets" / "theme.js").is_file()
 
 
-def test_index_references_assets(tmp_path):
+def test_index_is_self_contained(tmp_path):
     out = _run(tmp_path)
     idx = (out / "index.html").read_text(encoding="utf-8")
-    assert 'href="assets/style.css"' in idx
-    assert 'src="assets/theme.js"' in idx
+    assert "<style>" in idx and "--bg:" in idx
+    assert "<script>" in idx and 'localStorage.getItem("theme")' in idx
 
 
 def test_theme_selector_lists_all_four(tmp_path):
@@ -702,4 +700,4 @@ def test_crawled_page_has_theme_and_original_link(tmp_path):
     page = crawled_pages[0].read_text(encoding="utf-8")
     assert 'href="https://good.example/post"' in page  # original link banner
     assert "Real body text" in page
-    assert 'href="../../assets/style.css"' in page  # theme asset
+    assert "<style>" in page and "--bg:" in page  # theme CSS inlined

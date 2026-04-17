@@ -31,7 +31,6 @@ def convert(
     convs = _load_conversations(src)
 
     out.mkdir(parents=True, exist_ok=True)
-    render.copy_assets(out)
 
     if crawl_urls:
         urls = crawler.collect_urls(convs)
