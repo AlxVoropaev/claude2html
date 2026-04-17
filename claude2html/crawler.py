@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import urllib.request
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Iterable
@@ -20,6 +21,15 @@ DEFAULT_BLACKLIST = frozenset({"reddit.com", "youtube.com", "youtu.be"})
 _URL_RE = re.compile(r"""https?://[^\s<>"'\)\]]+""")
 _TRAILING_PUNCT = ".,);:!?\"'"
 _IMG_MD_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+
+_ARXIV_HOSTS = frozenset({"arxiv.org", "www.arxiv.org"})
+_ARXIV_PATH_RE = re.compile(r"^/(abs|pdf|html)/([^/?#]+?)(?:\.pdf)?/?$")
+_ARXIV_VER_RE = re.compile(r"v\d+$")
+_ARXIV_API_URL = "https://export.arxiv.org/api/query?id_list={ids}&max_results={n}"
+_ARXIV_PDF_URL = "https://arxiv.org/pdf/{aid}"
+_ARXIV_API_BATCH = 100
+_ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+_FNAME_BAD_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 
 
 def url_hash(url: str) -> str:
@@ -58,6 +68,74 @@ def collect_urls(convs: list[dict]) -> set[str]:
                     content = (block.get("input") or {}).get("content") or ""
                     urls.update(_extract_urls(content))
     return urls
+
+
+def _arxiv_id(url: str) -> str | None:
+    """Return the version-less arxiv ID for abs/pdf/html URLs, else None."""
+    p = urlparse(url)
+    if (p.hostname or "").lower() not in _ARXIV_HOSTS:
+        return None
+    m = _ARXIV_PATH_RE.match(p.path)
+    if not m:
+        return None
+    return _ARXIV_VER_RE.sub("", m.group(2))
+
+
+def _sanitize_filename(s: str, max_len: int = 120) -> str:
+    s = _FNAME_BAD_RE.sub(" ", s).strip().strip(".")
+    s = " ".join(s.split())
+    if len(s) > max_len:
+        s = s[:max_len].rstrip()
+    return s or "untitled"
+
+
+def _parse_arxiv_titles(xml: bytes) -> dict[str, str]:
+    """Parse an arxiv Atom response into {id: title}. Strips version suffixes."""
+    out: dict[str, str] = {}
+    root = ET.fromstring(xml)
+    for entry in root.findall("atom:entry", _ATOM_NS):
+        id_url = entry.findtext("atom:id", default="", namespaces=_ATOM_NS)
+        m = _ARXIV_PATH_RE.match(urlparse(id_url).path)
+        if not m:
+            continue
+        aid = _ARXIV_VER_RE.sub("", m.group(2))
+        title = " ".join(
+            entry.findtext("atom:title", default="", namespaces=_ATOM_NS).split()
+        )
+        if aid and title:
+            out[aid] = title
+    return out
+
+
+def _default_arxiv_titles(ids: list[str]) -> dict[str, str]:
+    """Batch-fetch arxiv titles via one API call per ``_ARXIV_API_BATCH`` IDs."""
+    out: dict[str, str] = {}
+    for i in range(0, len(ids), _ARXIV_API_BATCH):
+        chunk = ids[i : i + _ARXIV_API_BATCH]
+        url = _ARXIV_API_URL.format(ids=",".join(chunk), n=len(chunk))
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                xml = resp.read()
+            out.update(_parse_arxiv_titles(xml))
+        except Exception as exc:
+            print(
+                f"arxiv title batch failed ({len(chunk)} ids): {exc}",
+                file=sys.stderr, flush=True,
+            )
+    return out
+
+
+def _default_arxiv_pdf_fetcher(aid: str) -> bytes | None:
+    try:
+        req = urllib.request.Request(
+            _ARXIV_PDF_URL.format(aid=aid),
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read()
+    except Exception:
+        return None
 
 
 def _default_fetcher(url: str) -> str | None:
@@ -141,6 +219,8 @@ def crawl(
     per_host: int = 2,
     fetcher: Callable[[str], str | None] | None = None,
     img_fetcher: Callable[[str], bytes | None] | None = None,
+    arxiv_titles: Callable[[list[str]], dict[str, str]] | None = None,
+    arxiv_pdf_fetcher: Callable[[str], bytes | None] | None = None,
 ) -> dict[str, str]:
     """Download and convert URLs to local readable HTML under ``out_dir/crawled/``.
 
@@ -151,6 +231,8 @@ def crawl(
 
     fetcher = fetcher or _default_fetcher
     img_fetcher = img_fetcher or _default_img_fetcher
+    arxiv_titles = arxiv_titles or _default_arxiv_titles
+    arxiv_pdf_fetcher = arxiv_pdf_fetcher or _default_arxiv_pdf_fetcher
     out_dir = Path(out_dir)
     crawled_dir = out_dir / "crawled"
     crawled_dir.mkdir(parents=True, exist_ok=True)
@@ -167,12 +249,22 @@ def crawl(
         if is_blacklisted(url, blacklist):
             blacklisted.append(url)
             continue
-        h = url_hash(url)
-        rel = f"crawled/{h}/index.html"
-        if (out_dir / rel).is_file():
-            cached.append(url)
-            result_map[url] = rel
-            continue
+        is_arxiv = _arxiv_id(url) is not None
+        prev = result_map.get(url)
+        if prev and (out_dir / prev).is_file():
+            # An arxiv URL cached from before the arxiv feature still points at
+            # a crawled HTML stub — force re-download as a PDF.
+            if not is_arxiv or prev.startswith("arxiv/"):
+                cached.append(url)
+                continue
+            result_map.pop(url, None)
+        if not is_arxiv:
+            h = url_hash(url)
+            rel = f"crawled/{h}/index.html"
+            if (out_dir / rel).is_file():
+                cached.append(url)
+                result_map[url] = rel
+                continue
         work.append(url)
 
     width = max(len(str(total)), 1)
@@ -216,9 +308,42 @@ def crawl(
 
     results_lock = threading.Lock()
 
+    arxiv_ids_in_work = sorted({
+        aid for aid in (_arxiv_id(u) for u in work) if aid is not None
+    })
+    arxiv_title_map = arxiv_titles(arxiv_ids_in_work) if arxiv_ids_in_work else {}
+
     def worker(url: str) -> None:
         sem = get_sem(_host(url))
         t0 = time.monotonic()
+        aid = _arxiv_id(url)
+        if aid is not None:
+            with sem:
+                try:
+                    pdf = arxiv_pdf_fetcher(aid)
+                except Exception as exc:
+                    with stats_lock:
+                        stats["fail"] += 1
+                    log("fail", url, f"arxiv error: {exc}")
+                    return
+            if not pdf:
+                with stats_lock:
+                    stats["fail"] += 1
+                log("fail", url, "arxiv pdf fetch failed")
+                return
+            title = arxiv_title_map.get(aid)
+            name = _sanitize_filename(title or aid) + ".pdf"
+            rel = f"arxiv/{name}"
+            path = out_dir / rel
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(pdf)
+            with results_lock:
+                result_map[url] = rel
+            with stats_lock:
+                stats["ok"] += 1
+            log("ok", url, f"{time.monotonic() - t0:.2f}s arxiv")
+            return
         with sem:
             try:
                 html_text = fetcher(url)

@@ -7,6 +7,9 @@ import pytest
 
 from claude2html.crawler import (
     DEFAULT_BLACKLIST,
+    _arxiv_id,
+    _parse_arxiv_titles,
+    _sanitize_filename,
     collect_urls,
     crawl,
     is_blacklisted,
@@ -337,6 +340,194 @@ def test_crawl_handles_image_fetch_failure(tmp_path):
     assert "https://ex.example/p" in result
     page = (tmp_path / result["https://ex.example/p"]).read_text()
     assert "Body" in page
+
+
+# ---------- arxiv ----------
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://arxiv.org/abs/2604.14312", "2604.14312"),
+    ("https://arxiv.org/html/2604.14312", "2604.14312"),
+    ("https://arxiv.org/pdf/2604.14312", "2604.14312"),
+    ("https://arxiv.org/pdf/2604.14312.pdf", "2604.14312"),
+    ("https://arxiv.org/abs/2604.14312v1", "2604.14312"),
+    ("https://arxiv.org/abs/2604.14312v3", "2604.14312"),
+    ("https://arxiv.org/pdf/2604.14312v2.pdf", "2604.14312"),
+    ("https://www.arxiv.org/abs/2604.14312", "2604.14312"),
+    ("https://arxiv.org/abs/2604.14312?foo=bar", "2604.14312"),
+])
+def test_arxiv_id_extraction(url, expected):
+    assert _arxiv_id(url) == expected
+
+
+@pytest.mark.parametrize("url", [
+    "https://example.com/abs/2604.14312",
+    "https://arxiv.org/",
+    "https://arxiv.org/find/abc",
+    "https://evil.arxiv.org.attacker.com/abs/x",
+])
+def test_arxiv_id_rejects_non_arxiv(url):
+    assert _arxiv_id(url) is None
+
+
+def test_sanitize_filename_strips_bad_chars():
+    assert _sanitize_filename('Foo: "Bar" / Baz?') == "Foo Bar Baz"
+
+
+def test_sanitize_filename_empty_falls_back():
+    assert _sanitize_filename("///") == "untitled"
+
+
+def test_parse_arxiv_titles_multiple_entries():
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2604.14312v2</id>
+    <title>Attention
+      Is All You Need</title>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2501.00001</id>
+    <title>Another Paper</title>
+  </entry>
+</feed>"""
+    assert _parse_arxiv_titles(xml) == {
+        "2604.14312": "Attention Is All You Need",
+        "2501.00001": "Another Paper",
+    }
+
+
+def test_sanitize_filename_truncates():
+    assert len(_sanitize_filename("x" * 500, max_len=40)) <= 40
+
+
+def _arxiv_titles_fn(title="A Paper"):
+    def f(ids):
+        return {aid: title for aid in ids} if title else {}
+    return f
+
+
+def _arxiv_pdf_fn(pdf=b"%PDF-1.4 fake"):
+    def f(aid):
+        return pdf
+    return f
+
+
+def _arxiv_kwargs(title="A Paper", pdf=b"%PDF-1.4 fake"):
+    return dict(
+        arxiv_titles=_arxiv_titles_fn(title),
+        arxiv_pdf_fetcher=_arxiv_pdf_fn(pdf),
+    )
+
+
+def test_crawl_arxiv_writes_pdf_to_arxiv_dir(tmp_path):
+    result = crawl(
+        ["https://arxiv.org/abs/2604.14312"],
+        tmp_path,
+        fetcher=_make_fetcher(),
+        img_fetcher=_null_img,
+        **_arxiv_kwargs(title="Attention Is All You Need"),
+    )
+    url = "https://arxiv.org/abs/2604.14312"
+    assert url in result
+    rel = result[url]
+    assert rel == "arxiv/Attention Is All You Need.pdf"
+    assert (tmp_path / rel).is_file()
+    assert (tmp_path / rel).read_bytes() == b"%PDF-1.4 fake"
+
+
+def test_crawl_arxiv_html_url_also_downloads_pdf(tmp_path):
+    url = "https://arxiv.org/html/2604.14312"
+    result = crawl([url], tmp_path,
+                   fetcher=_make_fetcher(), img_fetcher=_null_img,
+                   **_arxiv_kwargs(title="Foo"))
+    assert result[url] == "arxiv/Foo.pdf"
+
+
+def test_crawl_arxiv_falls_back_to_id_when_title_missing(tmp_path):
+    url = "https://arxiv.org/abs/2604.14312"
+    result = crawl([url], tmp_path,
+                   fetcher=_make_fetcher(), img_fetcher=_null_img,
+                   **_arxiv_kwargs(title=None))
+    assert result[url] == "arxiv/2604.14312.pdf"
+
+
+def test_crawl_arxiv_pdf_failure(tmp_path):
+    url = "https://arxiv.org/abs/2604.14312"
+    result = crawl([url], tmp_path,
+                   fetcher=_make_fetcher(), img_fetcher=_null_img,
+                   **_arxiv_kwargs(title="X", pdf=None))
+    assert url not in result
+
+
+def test_crawl_arxiv_is_idempotent(tmp_path):
+    pdf_calls = []
+    title_calls = []
+
+    def pdf_fetch(aid):
+        pdf_calls.append(aid)
+        return b"%PDF-1.4 fake"
+
+    def titles(ids):
+        title_calls.append(list(ids))
+        return {aid: "Paper" for aid in ids}
+
+    url = "https://arxiv.org/abs/2604.14312"
+    crawl([url], tmp_path, fetcher=_make_fetcher(), img_fetcher=_null_img,
+          arxiv_titles=titles, arxiv_pdf_fetcher=pdf_fetch)
+    assert pdf_calls == ["2604.14312"]
+    assert title_calls == [["2604.14312"]]
+    crawl([url], tmp_path, fetcher=_make_fetcher(), img_fetcher=_null_img,
+          arxiv_titles=titles, arxiv_pdf_fetcher=pdf_fetch)
+    assert pdf_calls == ["2604.14312"]  # cached via index.json
+    assert title_calls == [["2604.14312"]]  # second run: no ids → no call
+
+
+def test_crawl_arxiv_batches_titles_into_one_call(tmp_path):
+    title_calls = []
+
+    def titles(ids):
+        title_calls.append(list(ids))
+        return {aid: f"Paper {aid}" for aid in ids}
+
+    urls = [
+        "https://arxiv.org/abs/2604.14312",
+        "https://arxiv.org/html/2512.99999",
+        "https://arxiv.org/pdf/2501.00001v3",
+    ]
+    crawl(urls, tmp_path, fetcher=_make_fetcher(), img_fetcher=_null_img,
+          arxiv_titles=titles, arxiv_pdf_fetcher=_arxiv_pdf_fn())
+    assert len(title_calls) == 1
+    assert sorted(title_calls[0]) == ["2501.00001", "2512.99999", "2604.14312"]
+
+
+def test_crawl_arxiv_migrates_old_crawled_html_cache(tmp_path):
+    """Arxiv URLs previously crawled as HTML must be re-downloaded as PDF."""
+    import json as _json
+    url = "https://arxiv.org/abs/2604.14312"
+    h = url_hash(url)
+    (tmp_path / "crawled" / h).mkdir(parents=True)
+    (tmp_path / "crawled" / h / "index.html").write_text("<html/>")
+    (tmp_path / "crawled").mkdir(exist_ok=True)
+    (tmp_path / "crawled" / "index.json").write_text(
+        _json.dumps({url: f"crawled/{h}/index.html"})
+    )
+    result = crawl([url], tmp_path,
+                   fetcher=_make_fetcher(), img_fetcher=_null_img,
+                   **_arxiv_kwargs(title="New Title"))
+    assert result[url] == "arxiv/New Title.pdf"
+    assert (tmp_path / "arxiv" / "New Title.pdf").is_file()
+
+
+def test_crawl_arxiv_does_not_create_crawled_dir_for_pdf(tmp_path):
+    url = "https://arxiv.org/abs/2604.14312"
+    result = crawl([url], tmp_path,
+                   fetcher=_make_fetcher(), img_fetcher=_null_img,
+                   **_arxiv_kwargs(title="Foo"))
+    # No per-URL HTML stub under crawled/<hash>/
+    h = url_hash(url)
+    assert not (tmp_path / "crawled" / h).exists()
+    # PDF sits in arxiv/ instead
+    assert (tmp_path / result[url]).is_file()
 
 
 # ---------- defaults ----------

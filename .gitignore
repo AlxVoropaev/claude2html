@@ -1,6 +1,7 @@
 # Personal export data — contains private chats / phone number. Never commit.
 json/
 out/
+exports/
 
 # Claude Code local settings
 .claude/settings.local.json
