@@ -1,0 +1,12 @@
+# Personal export data — contains private chats / phone number. Never commit.
+json/
+out/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
