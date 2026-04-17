@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import re
+import sys
 import threading
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -155,16 +158,50 @@ def crawl(
 
     result_map = load_link_map(out_dir)
 
+    url_list = list(urls)
+    total = len(url_list)
+    blacklisted: list[str] = []
+    cached: list[str] = []
     work: list[str] = []
-    for url in urls:
+    for url in url_list:
         if is_blacklisted(url, blacklist):
+            blacklisted.append(url)
             continue
         h = url_hash(url)
         rel = f"crawled/{h}/index.html"
         if (out_dir / rel).is_file():
+            cached.append(url)
             result_map[url] = rel
             continue
         work.append(url)
+
+    width = max(len(str(total)), 1)
+
+    def log(tag: str, url: str, extra: str = "") -> None:
+        with progress_lock:
+            progress[0] += 1
+            i = progress[0]
+        line = f"[{i:>{width}}/{total}] {tag:<11} {url}"
+        if extra:
+            line += f"  ({extra})"
+        print(line, file=sys.stderr, flush=True)
+
+    progress = [0]
+    progress_lock = threading.Lock()
+    stats = {"ok": 0, "fail": 0}
+    stats_lock = threading.Lock()
+
+    print(
+        f"Crawling {total} URLs ({len(blacklisted)} blacklisted, "
+        f"{len(cached)} cached, {len(work)} new) — "
+        f"{workers} workers, {per_host}/host",
+        file=sys.stderr,
+        flush=True,
+    )
+    for url in blacklisted:
+        log("blacklisted", url)
+    for url in cached:
+        log("cached", url)
 
     host_sems: dict[str, threading.Semaphore] = {}
     host_sems_lock = threading.Lock()
@@ -181,12 +218,19 @@ def crawl(
 
     def worker(url: str) -> None:
         sem = get_sem(_host(url))
+        t0 = time.monotonic()
         with sem:
             try:
                 html_text = fetcher(url)
-            except Exception:
+            except Exception as exc:
+                with stats_lock:
+                    stats["fail"] += 1
+                log("fail", url, f"fetch error: {exc}")
                 return
             if not html_text:
+                with stats_lock:
+                    stats["fail"] += 1
+                log("fail", url, "fetch returned nothing")
                 return
             try:
                 md_text = trafilatura.extract(
@@ -195,9 +239,15 @@ def crawl(
                     include_images=True,
                     include_links=True,
                 )
-            except Exception:
+            except Exception as exc:
                 md_text = None
+                extract_err = str(exc)
+            else:
+                extract_err = ""
             if not md_text:
+                with stats_lock:
+                    stats["fail"] += 1
+                log("fail", url, extract_err or "no extractable content")
                 return
 
         h = url_hash(url)
@@ -212,13 +262,23 @@ def crawl(
         rel = f"crawled/{h}/index.html"
         with results_lock:
             result_map[url] = rel
+        with stats_lock:
+            stats["ok"] += 1
+        log("ok", url, f"{time.monotonic() - t0:.2f}s")
 
     if work:
+        random.shuffle(work)  # spread hosts out so workers don't pile onto one semaphore
         with ThreadPoolExecutor(max_workers=workers) as pool:
             list(pool.map(worker, work))
 
     index_file.write_text(
         json.dumps(result_map, ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
+    )
+    print(
+        f"Done: {stats['ok']} ok, {stats['fail']} failed, "
+        f"{len(blacklisted)} blacklisted, {len(cached)} cached",
+        file=sys.stderr,
+        flush=True,
     )
     return result_map
