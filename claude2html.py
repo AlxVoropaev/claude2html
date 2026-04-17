@@ -56,12 +56,8 @@ def _render_tool_use(block: dict) -> str:
     )
 
 
-def _render_tool_result(block: dict) -> str:
-    name = E(block.get("name") or "tool")
-    err_cls = " error" if block.get("is_error") else ""
-    parts = [f'<div class="block tool{err_cls}">',
-             f'<div><span class="tool-name">← {name}</span></div>']
-    items = block.get("content") or []
+def _render_tool_result_items(items: list) -> str:
+    parts = []
     for item in items:
         title = item.get("title")
         url = item.get("url")
@@ -77,8 +73,31 @@ def _render_tool_result(block: dict) -> str:
             parts.append("</div>")
         else:
             parts.append(f'<div class="text">{E(text)}</div>')
-    parts.append("</div>")
     return "".join(parts)
+
+
+def _render_tool_result(block: dict) -> str:
+    name = E(block.get("name") or "tool")
+    err_cls = " error" if block.get("is_error") else ""
+    body = _render_tool_result_items(block.get("content") or [])
+    return (
+        f'<div class="block tool{err_cls}">'
+        f'<div><span class="tool-name">← {name}</span></div>'
+        f"{body}"
+        "</div>"
+    )
+
+
+def _render_web_search(use: dict, result: dict) -> str:
+    query = E(use.get("input", {}).get("query", "") or "web_search")
+    err_cls = " error" if result.get("is_error") else ""
+    body = _render_tool_result_items(result.get("content") or [])
+    return (
+        f'<div class="block tool{err_cls}"><details>'
+        f"<summary>🔍 {query}</summary>"
+        f"{body}"
+        "</details></div>"
+    )
 
 
 RENDERERS = {
@@ -115,11 +134,26 @@ def _render_attachments(msg: dict) -> str:
 def _render_message(msg: dict) -> str:
     sender = msg.get("sender", "unknown")
     ts = E(msg.get("created_at", ""))
+    content = msg.get("content", []) or []
     blocks = []
-    for block in msg.get("content", []) or []:
+    i = 0
+    while i < len(content):
+        block = content[i]
+        nxt = content[i + 1] if i + 1 < len(content) else None
+        if (
+            block.get("type") == "tool_use"
+            and block.get("name") == "web_search"
+            and nxt is not None
+            and nxt.get("type") == "tool_result"
+            and nxt.get("tool_use_id") == block.get("id")
+        ):
+            blocks.append(_render_web_search(block, nxt))
+            i += 2
+            continue
         renderer = RENDERERS.get(block.get("type"))
         if renderer:
             blocks.append(renderer(block))
+        i += 1
     blocks.append(_render_attachments(msg))
     return (
         f'<div class="msg {E(sender)}">'
