@@ -13,36 +13,77 @@ import sys
 from pathlib import Path
 
 CSS = """
+:root { color-scheme: light;
+  --bg: #fff; --text: #222; --meta: #666;
+  --border: #ddd; --human-bg: #f5f7fb; --assistant-bg: #fff;
+  --role: #555; --ts: #999;
+  --tool-border: #4a90e2; --tool-bg: #f0f6ff;
+  --tool-err-border: #e24a4a; --tool-err-bg: #fff0f0;
+  --tool-name: #2a5ca0;
+  --thinking-border: #aaa; --thinking-bg: #fafafa;
+  --thinking-text: #555; --thinking-summary: #666;
+  --attach-border: #ccc; --pre-bg: #eef;
+  --index-border: #eee; --link: #2a5ca0; --date: #888; }
+[data-theme="dark"] { color-scheme: dark;
+  --bg: #1a1a1a; --text: #e5e5e5; --meta: #999;
+  --border: #333; --human-bg: #252a36; --assistant-bg: #1e1e1e;
+  --role: #aaa; --ts: #777;
+  --tool-border: #5a9ae8; --tool-bg: #1a2638;
+  --tool-err-border: #e87070; --tool-err-bg: #3a1e1e;
+  --tool-name: #7ab8ff;
+  --thinking-border: #555; --thinking-bg: #202020;
+  --thinking-text: #aaa; --thinking-summary: #888;
+  --attach-border: #444; --pre-bg: #2a2a3a;
+  --index-border: #2a2a2a; --link: #7ab8ff; --date: #777; }
+html { background: var(--bg); }
 body { font-family: -apple-system, Segoe UI, sans-serif; max-width: 900px;
-       margin: 2em auto; padding: 0 1em; color: #222; }
+       margin: 2em auto; padding: 0 1em; color: var(--text); background: var(--bg); }
 h1 { margin-bottom: 0.2em; }
-.meta { color: #666; font-size: 0.9em; margin-bottom: 2em; }
-.msg { border: 1px solid #ddd; border-radius: 6px; padding: 0.8em 1em;
+.meta { color: var(--meta); font-size: 0.9em; margin-bottom: 2em; }
+.msg { border: 1px solid var(--border); border-radius: 6px; padding: 0.8em 1em;
        margin: 0.8em 0; }
-.msg.human { background: #f5f7fb; }
-.msg.assistant { background: #fff; }
+.msg.human { background: var(--human-bg); }
+.msg.assistant { background: var(--assistant-bg); }
 .role { font-weight: 600; text-transform: uppercase; font-size: 0.75em;
-        letter-spacing: 0.05em; color: #555; }
-.ts { color: #999; font-size: 0.8em; margin-left: 0.5em; }
+        letter-spacing: 0.05em; color: var(--role); }
+.ts { color: var(--ts); font-size: 0.8em; margin-left: 0.5em; }
 .block { margin: 0.6em 0; }
 .block pre, .text { white-space: pre-wrap; word-wrap: break-word;
                     font-family: inherit; margin: 0; }
-.tool { border-left: 3px solid #4a90e2; padding: 0.4em 0.8em;
-        background: #f0f6ff; font-size: 0.92em; }
-.tool.error { border-left-color: #e24a4a; background: #fff0f0; }
-.tool-name { font-family: monospace; font-weight: 600; color: #2a5ca0; }
-.thinking { border-left: 3px solid #aaa; padding: 0.4em 0.8em;
-            background: #fafafa; color: #555; font-style: italic; }
-.thinking summary { cursor: pointer; font-style: normal; color: #666; }
-.attachments { border-top: 1px dashed #ccc; margin-top: 0.8em; padding-top: 0.6em;
+.tool { border-left: 3px solid var(--tool-border); padding: 0.4em 0.8em;
+        background: var(--tool-bg); font-size: 0.92em; }
+.tool.error { border-left-color: var(--tool-err-border); background: var(--tool-err-bg); }
+.tool-name { font-family: monospace; font-weight: 600; color: var(--tool-name); }
+.thinking { border-left: 3px solid var(--thinking-border); padding: 0.4em 0.8em;
+            background: var(--thinking-bg); color: var(--thinking-text); font-style: italic; }
+.thinking summary { cursor: pointer; font-style: normal; color: var(--thinking-summary); }
+.attachments { border-top: 1px dashed var(--attach-border); margin-top: 0.8em; padding-top: 0.6em;
                font-size: 0.9em; }
 .attach-name { font-family: monospace; }
-pre.input { background: #eef; padding: 0.5em; border-radius: 4px; overflow-x: auto; }
+pre.input { background: var(--pre-bg); padding: 0.5em; border-radius: 4px; overflow-x: auto; }
 ul.index { list-style: none; padding: 0; }
-ul.index li { padding: 0.4em 0; border-bottom: 1px solid #eee; }
-ul.index a { text-decoration: none; color: #2a5ca0; font-weight: 500; }
-ul.index .date { color: #888; font-size: 0.85em; margin-left: 0.5em; }
+ul.index li { padding: 0.4em 0; border-bottom: 1px solid var(--index-border); }
+ul.index a { text-decoration: none; color: var(--link); font-weight: 500; }
+ul.index .date { color: var(--date); font-size: 0.85em; margin-left: 0.5em; }
+a { color: var(--link); }
+#theme-toggle { position: fixed; top: 1em; right: 1em; padding: 0.4em 0.8em;
+                background: var(--assistant-bg); color: var(--text);
+                border: 1px solid var(--border); border-radius: 4px;
+                cursor: pointer; font-size: 0.85em; font-family: inherit; z-index: 100; }
 """
+
+THEME_JS = (
+    "(function(){try{if(localStorage.getItem('theme')==='dark')"
+    "document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();"
+    "document.addEventListener('DOMContentLoaded',function(){"
+    "var b=document.getElementById('theme-toggle');if(!b)return;"
+    "function lbl(){b.textContent="
+    "document.documentElement.getAttribute('data-theme')==='dark'?'Light':'Dark';}"
+    "lbl();b.addEventListener('click',function(){"
+    "var el=document.documentElement,dark=el.getAttribute('data-theme')==='dark';"
+    "if(dark){el.removeAttribute('data-theme');}else{el.setAttribute('data-theme','dark');}"
+    "try{localStorage.setItem('theme',dark?'light':'dark');}catch(e){}lbl();});});"
+)
 
 E = html.escape
 
@@ -158,7 +199,9 @@ def _page(title: str, body: str) -> str:
         "<!DOCTYPE html><html><head>"
         f'<meta charset="utf-8"><title>{E(title)}</title>'
         f"<style>{CSS}</style>"
+        f"<script>{THEME_JS}</script>"
         "</head><body>"
+        '<button id="theme-toggle" type="button">Dark</button>'
         f"{body}"
         "</body></html>"
     )
